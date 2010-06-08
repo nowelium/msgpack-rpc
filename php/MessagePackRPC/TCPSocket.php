@@ -2,6 +2,7 @@
 class MessagePackRPC_TCPSocket
 {
   const MILLISECONDS = 1000;
+  const USECONDS = 1;
   
   public $addr = null;
   public $loop = null;
@@ -10,8 +11,8 @@ class MessagePackRPC_TCPSocket
   
   public function __construct($addr, $loop, $tprt)
   {
-    $this->messagePack = new MessagePack();
-    $this->messagePack->initialize();
+    //$this->messagePack = new MessagePack();
+    //$this->messagePack->initialize();
 
     $this->addr = $addr;
     $this->loop = $loop;
@@ -26,10 +27,10 @@ class MessagePackRPC_TCPSocket
     $port       = $this->addr->getPort();
     $errs       = "";
     $errn       = "";
-    $this->cltf = stream_socket_client('tcp://' . $host .':' . $port, $errn, $errs, $timeout = 1, STREAM_CLIENT_CONNECT);
+    $this->cltf = stream_socket_client('tcp://' . $host . ':' . $port, $errn, $errs);
 
     if ($this->cltf != false) {
-      // TODO: noblock
+      // non blocking mode
       stream_set_blocking($this->cltf, 0);
 
       $this->cbConnectedFlg();
@@ -52,11 +53,14 @@ class MessagePackRPC_TCPSocket
   
   public function tryMsgPackSend($sendmg = null, $sizerp = 1024)
   {
+    // TODO: Event Loop Implementation
+    // TODO: Socket Stream
+    
     while(true){
       $read = null;
       $write = array($this->cltf);
       $except = null;
-      $w = stream_select($read, $write, $except, 0, 100 * self::MILLISECONDS);
+      $w = stream_select($read, $write, $except, 0, 100 * self::USECONDS);
       if($w === false){
         // TODO: error
         throw new RuntimeException('write stream');
@@ -64,36 +68,44 @@ class MessagePackRPC_TCPSocket
       if($w === 0){
         continue;
       }
+      // TODO: stream write
       $this->fwrite($sendmg);
       break;
     }
     
+    $unpacker = new MessagePack;
+    $unpacker->initialize();
+    $buffer = '';
     while(true){
       $read = array($this->cltf);
       $write = null;
       $except = null;
-      $r = stream_select($read, $write, $except, 0, 100 * self::MILLISECONDS);
+      $r = stream_select($read, $write, $except, 0, 20000);
       if($r === false){
         // TODO: error
         throw new RuntimeException('read stream');
       }
-      if(0 === $r){
+      if($r === 0){
         continue;
       }
-      $buf = fread($this->cltf, $sizerp);
-      break;
+      
+      $buffer .= fread($this->cltf, $sizerp);
+      $nread = $unpacker->execute($buffer, $nread);
+      if($unpacker->finished()){
+        break;
+      }
     }
     
     $this->tryConnClosing();
 
-    $buf = msgpack_unpack($buf);
-    $this->cbMsgsReceived($buf);
+    $data = $unpacker->data();
+    $this->cbMsgsReceived($data);
   }
 
   public function tryConnClosing()
   {
     // TODO: Event Loop Implementation
-    if ((!$this->cltf) && fclose($this->cltf)) {
+    if ((!$this->cltf) && @flose($this->cltf)) {
       $this->cltf = null;
     }
   }
