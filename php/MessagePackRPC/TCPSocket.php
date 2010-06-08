@@ -1,11 +1,13 @@
 <?php
 class MessagePackRPC_TCPSocket
 {
+  const MILLISECONDS = 1000;
+  
   public $addr = null;
   public $loop = null;
   public $tprt = null;  // Transport
   public $cltf = null;  // Packet send object
-
+  
   public function __construct($addr, $loop, $tprt)
   {
     $this->messagePack = new MessagePack();
@@ -25,6 +27,8 @@ class MessagePackRPC_TCPSocket
     $errs       = "";
     $errn       = "";
     $this->cltf = fsockopen($host, $port, $errn, $errs);
+    // TODO: connection timeout 100ms
+    stream_set_timeout($this->cltf, 0, 100 * self::MILLISECONDS);
 
     if ($this->cltf != false) {
       $this->cbConnectedFlg();
@@ -32,14 +36,34 @@ class MessagePackRPC_TCPSocket
       $this->cbFailed();
     }
   }
+  
+  protected function feof(&$time){
+    $time = microtime(true);
+    return feof($this->cltf);
+  }
 
   public function tryMsgPackSend($sendmg = null, $sizerp = 1024)
   {
     // TODO: Event Loop Implementation
     // TODO: Socket Stream
-    $buf = null;
     $flg = fputs($this->cltf, $sendmg);
-    $buf = fread($this->cltf, $sizerp);
+    
+    $buf = '';
+    $timer = null;
+    // TODO: read timeout
+    $timeout = 1.0;
+    while(!$this->feof($timer)){
+      if($timeout < (microtime(true) - $timer)){
+        break;
+      }
+      $read = fread($this->cltf, $sizerp);
+      if(empty($read)){
+          $buf .= $read;
+          break;
+      }
+      $buf .= $read;
+    }
+
     $this->tryConnClosing();
 
     $buf = msgpack_unpack($buf);
