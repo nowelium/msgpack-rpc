@@ -26,13 +26,11 @@ class MessagePackRPC_TCPSocket
     $port       = $this->addr->getPort();
     $errs       = "";
     $errn       = "";
-    $this->cltf = fsockopen($host, $port, $errn, $errs);
+    $this->cltf = stream_socket_client('tcp://' . $host .':' . $port, $errn, $errs, $timeout = 1, STREAM_CLIENT_CONNECT);
 
     if ($this->cltf != false) {
-      // TODO: connection timeout 100ms
-      stream_set_timeout($this->cltf, 0, 100 * self::MILLISECONDS);
-      // TODO: block
-      stream_set_blocking($this->cltf, 1);
+      // TODO: noblock
+      stream_set_blocking($this->cltf, 0);
 
       $this->cbConnectedFlg();
     } else {
@@ -40,10 +38,6 @@ class MessagePackRPC_TCPSocket
     }
   }
   
-  protected function feof(&$time){
-    $time = microtime(true);
-    return feof($this->cltf);
-  }
   protected function fwrite($sendmg){
     $msglen = strlen($sendmg);
     for($length = 0; $length < $msglen; ){
@@ -55,37 +49,46 @@ class MessagePackRPC_TCPSocket
     }
     return $length;
   }
-  protected function fread($sizerp){
-    $buf = '';
-    $timer = null;  
-    $timeout = 0.1;
-    $start = microtime(true);
-    while(!$this->feof($timer)){
-      if($timeout < ($timer - $start)){
-        break;
-      }
-      $read = fread($this->cltf, $sizerp);
-      $buf .= $read;
-    }
-    return $buf;
-  }
-
+  
   public function tryMsgPackSend($sendmg = null, $sizerp = 1024)
   {
-    // TODO: Event Loop Implementation
-    // TODO: Socket Stream
-    $flg = $this->fwrite($sendmg);
-    //stream_socket_shutdown($this->cltf, STREAM_SHUT_WR);
-
-    $buf = $this->fread($sizerp);
-    //stream_socket_shutdown($this->cltf, STREAM_SHUT_RD);
-
+    while(true){
+      $read = null;
+      $write = array($this->cltf);
+      $except = null;
+      $w = stream_select($read, $write, $except, 0, 100 * self::MILLISECONDS);
+      if($w === false){
+        // TODO: error
+        throw new RuntimeException('write stream');
+      }
+      if($w === 0){
+        continue;
+      }
+      $this->fwrite($sendmg);
+      break;
+    }
+    
+    while(true){
+      $read = array($this->cltf);
+      $write = null;
+      $except = null;
+      $r = stream_select($read, $write, $except, 0, 100 * self::MILLISECONDS);
+      if($r === false){
+        // TODO: error
+        throw new RuntimeException('read stream');
+      }
+      if(0 === $r){
+        continue;
+      }
+      $buf = fread($this->cltf, $sizerp);
+      break;
+    }
+    
     $this->tryConnClosing();
 
-    if(!empty($buf)){
-      $buf = msgpack_unpack($buf);
-      $this->cbMsgsReceived($buf);
-    }
+    $buf = msgpack_unpack($buf);
+    var_dump($buf);
+    $this->cbMsgsReceived($buf);
   }
 
   public function tryConnClosing()
