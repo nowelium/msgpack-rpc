@@ -87,7 +87,6 @@ class MessagePackRPC_TCPSocket
     $this->tryConnClosing();
 
     $buf = msgpack_unpack($buf);
-    var_dump($buf);
     $this->cbMsgsReceived($buf);
   }
 
