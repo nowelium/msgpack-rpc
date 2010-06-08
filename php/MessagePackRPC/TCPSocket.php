@@ -27,10 +27,13 @@ class MessagePackRPC_TCPSocket
     $errs       = "";
     $errn       = "";
     $this->cltf = fsockopen($host, $port, $errn, $errs);
-    // TODO: connection timeout 100ms
-    stream_set_timeout($this->cltf, 0, 100 * self::MILLISECONDS);
 
     if ($this->cltf != false) {
+      // TODO: connection timeout 100ms
+      stream_set_timeout($this->cltf, 0, 100 * self::MILLISECONDS);
+      // TODO: block
+      stream_set_blocking($this->cltf, 1);
+
       $this->cbConnectedFlg();
     } else {
       $this->cbFailed();
@@ -41,33 +44,48 @@ class MessagePackRPC_TCPSocket
     $time = microtime(true);
     return feof($this->cltf);
   }
+  protected function fwrite($sendmg){
+    $msglen = strlen($sendmg);
+    for($length = 0; $length < $msglen; ){
+      $size = fwrite($this->cltf, substr($sendmg, $length));
+      if(false === $size){
+        return $length;
+      }
+      $length += $size;
+    }
+    return $length;
+  }
+  protected function fread($sizerp){
+    $buf = '';
+    $timer = null;  
+    $timeout = 0.1;
+    $start = microtime(true);
+    while(!$this->feof($timer)){
+      if($timeout < ($timer - $start)){
+        break;
+      }
+      $read = fread($this->cltf, $sizerp);
+      $buf .= $read;
+    }
+    return $buf;
+  }
 
   public function tryMsgPackSend($sendmg = null, $sizerp = 1024)
   {
     // TODO: Event Loop Implementation
     // TODO: Socket Stream
-    $flg = fputs($this->cltf, $sendmg);
-    
-    $buf = '';
-    $timer = null;
-    // TODO: read timeout
-    $timeout = 1.0;
-    while(!$this->feof($timer)){
-      if($timeout < (microtime(true) - $timer)){
-        break;
-      }
-      $read = fread($this->cltf, $sizerp);
-      if(empty($read)){
-          $buf .= $read;
-          break;
-      }
-      $buf .= $read;
-    }
+    $flg = $this->fwrite($sendmg);
+    //stream_socket_shutdown($this->cltf, STREAM_SHUT_WR);
+
+    $buf = $this->fread($sizerp);
+    //stream_socket_shutdown($this->cltf, STREAM_SHUT_RD);
 
     $this->tryConnClosing();
 
-    $buf = msgpack_unpack($buf);
-    $this->cbMsgsReceived($buf);
+    if(!empty($buf)){
+      $buf = msgpack_unpack($buf);
+      $this->cbMsgsReceived($buf);
+    }
   }
 
   public function tryConnClosing()

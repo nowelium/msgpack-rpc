@@ -2,7 +2,8 @@ package org.msgpack.rpc.server;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.nio.channels.Channel;
+//import java.nio.channels.Channel;
+import org.jboss.netty.channel.Channel;
 import java.util.AbstractList;
 import java.util.ArrayList;
 
@@ -25,12 +26,10 @@ public class RPCServerHandler extends SimpleChannelHandler {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent ev) {
         ev.getCause().printStackTrace();
+        // java.lang.ClassCastException: org.jboss.netty.channel.socket.nio.NioAcceptedSocketChannel cannot be cast to java.nio.channels.Channel
+        // Channel ch = (Channel) ev.getChannel();
         Channel ch = (Channel) ev.getChannel();
-        try {
-            ch.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        ch.close();
     }
 
     @Override
